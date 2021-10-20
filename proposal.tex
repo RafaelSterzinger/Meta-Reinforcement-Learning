@@ -1,0 +1,63 @@
+% This is borrowed from the 2021 LaTeX2e package for submissions to the Conference on Neural Information Processing Systems (NeurIPS). All credits go to the authors of the original package, which was obtained from this website:
+% https://nips.cc/Conferences/2021/PaperInformation/StyleFiles
+
+\documentclass{article}
+\usepackage[final, nonatbib]{neurips_2021}
+\usepackage[numbers]{natbib}
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{graphicx}
+
+
+\title{Latex Template for the Proposal}
+% You should enter the name of your project here.
+
+\author{
+    Author \\
+    \texttt{email@student.ethz.ch} \\
+    %% examples of more authors
+    % \And
+    % Author \\
+    % \texttt{email@student.ethz.ch} \\
+    % \AND
+    % Author \\
+    % \texttt{email@student.ethz.ch} \\
+}
+% make sure to include the full names of all the team members
+
+
+\begin{document}
+
+\maketitle
+
+\section{Problem Description}
+Describe the problem you will be investigating and explain the motivations. Why do you think this is an interesting problem?
+
+
+\section{Challenges}
+What is the related state-of-the-art work on this topic? What are the potential challenges of this project?
+
+
+\section{Methods/Algorithms/Implementations}
+Describe the proposed or tentative method/algorithm/implementation to address the underlying problem. You can divide the section into several parts and design the structure by yourself.
+
+
+\section{Evaluation}
+Provide related references that you will examine in later stages (if any). Provide evaluation plan of your results (if any). What other algorithms are you going to compare with? How will you evaluate different methods?
+
+
+\medskip
+\bibliographystyle{unsrtnat}
+\bibliography{ref.bib}
+
+% Please remember to delete this part for instructions on the references.
+Add references if any. We provide an example using \texttt{natbib} to cite one of the most famous books in reinforcement learning \cite{sutton2018reinforcement}.
+
+
+\end{document}

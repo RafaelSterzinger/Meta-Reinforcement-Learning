@@ -1,0 +1,83 @@
+% This is borrowed from the 2021 LaTeX2e package for submissions to the Conference on Neural Information Processing Systems (NeurIPS). All credits go to the authors of the original package, which was obtained from this website:
+% https://nips.cc/Conferences/2021/PaperInformation/StyleFiles
+% Some instructions are originated from the deep learning course in Stanford, which was obtained from this website:
+% https://cs230.stanford.edu/project/
+
+\documentclass{article}
+\usepackage[final, nonatbib]{neurips_2021}
+\usepackage[numbers]{natbib}
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{graphicx}
+
+
+\title{Latex Template for the Final Report}
+% Feel free to use the same template for the Milestone
+
+\author{
+    Author \\
+    \texttt{email@student.ethz.ch} \\
+    %% examples of more authors
+    % \And
+    % Author \\
+    % \texttt{email@student.ethz.ch} \\
+    % \AND
+    % Author \\
+    % \texttt{email@student.ethz.ch} \\
+}
+
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+    The abstract should consist of 1 paragraph describing the motivation for your paper and a high-level explanation of the methodology you used/results obtained.
+\end{abstract}
+
+
+\section{Introduction}
+Explain the problem and why it is important. Discuss your motivation for pursuing this problem. What is the main challenge of this problem? Give some background if necessary.
+
+
+\section{Related Work}
+Discuss existing papers that are related to your project. What is the state-of-the-art? Discuss their strengths and weaknesses, as well as how they are similar to and differ from your work. Google Scholar is very useful for this (you can click ``cite'' and it generates BibTeX).
+
+
+\section{Methods/Algorithms}
+The main results of your final report start from here. You can design the structure of it by yourself and divide it into different sections. Describe how you solve the problem. Describe your proposed algorithms and theoretical proofs (if any). Note: Theoretical projects may have an appendix showing extended proofs. However, TAs may not read all the details in the Appendix, so make sure you provide a high-level idea of the proofs in the main paper.
+
+
+\section{Experiments/Results/Discussion}
+For algorithmic and application projects, you should show the detailed configurations and experiment results. You should give details about what (hyper)parameters you chose (e.g. learning-rate and mini-batch size) and explain how and why you chose them this way. You should provide details about how you evaluate your algorithms and what metrics are used. For results, you want to have a mixture of tables and plots. You should compare your algorithm with some existing methods in the related literature. Make sure to discuss the figures/tables/comparisons in your main text. Why you think you algorithms fail/success? Why do you think that some algorithms worked better than others?
+
+
+\section{Conclusion/Future Work}
+Summarize your report and restate key points. For future work, what is the open question? What is the possible directions to improve your work?
+
+
+\section{Contributions}
+You can include a section that describes what each team member worked on and contributed to the project. This is not included in the 8 page limit.
+
+
+\medskip
+\bibliographystyle{unsrtnat}
+\bibliography{ref.bib}
+
+% Please remember to delete this part for instructions on the references.
+At the end of your paper, you should include citations for: (1) Any papers mentioned in the related work section. (2) Papers describing algorithms that you used. (3) Code or libraries you used. The references section is excluded from the 8 page limit. If you are using TeX, you can use any bibliography format and citation style as long as it is consistent. We provide an example using \texttt{natbib} to cite one of the most famous books in reinforcement learning \cite{sutton2018reinforcement}.
+
+
+\clearpage
+\appendix
+\section{Appendix}
+You can defer the lengthy proofs to the appendix (if any). This is not included in the 8 page limit.
+
+
+\end{document}
