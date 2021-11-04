@@ -1,8 +1,14 @@
 import argparse
 from envs.init import load_env
+from util.data_generator import generate_data
 
 
 def main(ENV: str, ALGO: str):
+    if ALGO == 'macaw':
+        # check if training data has been generated
+        generate_data(ENV)
+    return
+
     train(ENV, ALGO)
     test(ENV, ALGO)
 
