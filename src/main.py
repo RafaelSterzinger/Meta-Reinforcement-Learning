@@ -2,16 +2,33 @@ import argparse
 from envs.init import load_env
 
 
-def main(env: str, algo: str):
-    env = load_env(env)
+def main(ENV: str, ALGO: str):
+    train(ENV, ALGO)
+    test(ENV, ALGO)
 
-    reward = 0
-    for _ in range(1000):
-        env.render()
-        o, r, _, _ = env.step(env.action_space.sample())
-        reward += r
-    print(reward)
-    env.close()
+
+def train(ENV: str, ALGO: str):
+    for _ in range(20000):
+        env = load_env(ENV)
+        reward = 0
+        for _ in range(100):
+            env.render()
+            o, r, _, _ = env.step(env.action_space.sample())
+            reward += r
+        print(reward)
+        env.close()
+
+
+def test(ENV: str, ALGO: str):
+    for _ in range(300):
+        env = load_env(ENV)
+        reward = 0
+        for _ in range(100):
+            env.render()
+            o, r, _, _ = env.step(env.action_space.sample())
+            reward += r
+        print(reward)
+        env.close()
 
 
 if __name__ == '__main__':
