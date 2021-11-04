@@ -1,7 +1,11 @@
 # Load environment with corresponding params
 import gym
+import gym_bandits
+
+ENVS_DICT = {'bandits': 'BanditTenArmedRandomFixed-v0'}
+
 
 def load_env(name: str):
-    env = gym.make(name)
+    env = gym.make(ENVS_DICT[name])
     env.reset()
-    return NotImplemented
+    return env
