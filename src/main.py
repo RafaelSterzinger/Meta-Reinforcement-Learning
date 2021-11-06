@@ -1,12 +1,16 @@
 import argparse
 from envs.init import load_env
 from util.data_generator import generate_data
+from os.path import exists
 
 
 def main(ENV: str, ALGO: str):
     if ALGO == 'macaw':
         # check if training data has been generated
-        generate_data(ENV)
+        if exists(f'data/{ENV}.pkl'):
+            pass
+        else:
+            generate_data(ENV)
     return
 
     train(ENV, ALGO)
