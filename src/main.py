@@ -34,6 +34,6 @@ def test(ENV: str, ALGO: str):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Choose an environment and an algorithm.')
     parser.add_argument('--env', type=str, choices=['bandits'], required=True)
-    parser.add_argument('--alg', type=str, choices=['r', 'r2', 'maml', 'taml', 'macaw'], required=True)
+    parser.add_argument('--alg', type=str, choices=['r', 'rl-2', 'maml', 'taml', 'macaw'], required=True)
     args = parser.parse_args()
     main(args.env, args.alg)
