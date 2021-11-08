@@ -5,24 +5,35 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from tqdm import tqdm
 import pickle as pkl
-from src.envs.init import load_env
+from src.envs.env_init import load_env
 from src.envs.env import ENV_CONFIGS
 
 
 def generate_data(ENV: str):
     config = ENV_CONFIGS[ENV]['generation']
     samples_per_iter = config['samples_per_iter']
+    train_tasks = config['num_of_train_tasks']
+    test_tasks = config['num_of_test_tasks']
+    tasks = generate_trajectories(ENV, samples_per_iter, train_tasks)
+    f = open(f'../data/{ENV}/train.pkl', 'wb')
+    pkl.dump(tasks, f)
+    f.close()
+    tasks = generate_trajectories(ENV, samples_per_iter, test_tasks)
+    f = open(f'../data/{ENV}/test.pkl', 'wb')
+    pkl.dump(tasks, f)
+    f.close()
+
+
+def generate_trajectories(ENV, samples_per_iter, num_of_tasks):
     tasks = []
-    for _ in tqdm(range(config['num_of_tasks'])):
+    for _ in tqdm(range(num_of_tasks)):
         env = load_env(ENV)
         model = PPO('MlpPolicy', env, verbose=0, n_steps=samples_per_iter)
         callback = RolloutCallback()
-        model.learn(samples_per_iter * config['num_of_tasks'], callback=callback)
+        model.learn(samples_per_iter * num_of_tasks, callback=callback)
         tasks.append(callback.get_rollouts())
         env.close()
-    f = open(f'data/{ENV}.pkl', 'wb')
-    pkl.dump(tasks, f)
-    f.close()
+    return tasks
 
 
 class Transition():

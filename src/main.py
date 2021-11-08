@@ -1,5 +1,8 @@
 import argparse
-from envs.init import load_env
+
+from src.algos.algo_init import load_algo
+from src.envs.env_init import load_env
+from src.envs.macaw_gym import GymMacaw
 from util.data_generator import generate_data
 from os.path import exists
 
@@ -7,19 +10,18 @@ from os.path import exists
 def main(ENV: str, ALGO: str):
     if ALGO == 'macaw':
         # check if training data has been generated
-        if exists(f'data/{ENV}.pkl'):
-            pass
-        else:
+        if not exists(f'../data/{ENV}.pkl'):
             generate_data(ENV)
-    return
 
     train(ENV, ALGO)
-    test(ENV, ALGO)
+    # test(ENV, ALGO)
 
 
 def train(ENV: str, ALGO: str):
+    env = GymMacaw(ENV, train=True) if ALGO == 'macaw' else load_env(ENV)
+    model = load_algo(ALGO, env.action_space, env.observation_space)
+
     for _ in range(20000):
-        env = load_env(ENV)
         reward = 0
         for _ in range(100):
             env.render()
