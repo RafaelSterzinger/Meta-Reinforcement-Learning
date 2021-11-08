@@ -9,6 +9,7 @@ import torch.nn.functional as F
 # Policy Optimization
 # Trust Region Policy Optimization (use a library)
 from gym_bandits.bandit import BanditEnv
+from torch import optim
 
 from src.envs.init import ENVS_DICT, load_env
 
@@ -107,21 +108,21 @@ class RNNPolicy(nn.Module):
         return prob
 
 
-def get_init_input(env):
-    s = env.reset()
+def make_tensor(s, a, r, d, env):
     s = torch.tensor(s, device=device)
     s = F.one_hot(s, num_classes=env.observation_space.n).to(dtype)
     s = s.unsqueeze(0)
-    a = torch.tensor([0], device=device, dtype=dtype)
-    r = torch.tensor([0], device=device, dtype=dtype)
-    d = torch.tensor([0], device=device, dtype=dtype)
+    a = torch.tensor([a], device=device, dtype=dtype)
+    r = torch.tensor([r], device=device, dtype=dtype)
+    d = torch.tensor([d], device=device, dtype=dtype)
     return s, a, r, d
 
 
 def unit_test():
     env = load_env('bandits')
     policy = RNNPolicy(env, 32, 2)
-    probs = policy(*get_init_input(env))
+    s = env.reset()
+    probs = policy(*make_tensor(s, 0, 0, 0, env))
     print('action probabilities:', probs)
     print('sampled action:', torch.distributions.Categorical(probs).sample())
 
@@ -130,8 +131,37 @@ def train(env, N_HIDDEN=32, N_LAYERS=2):
     # TODO: do not forget to set to eval() mode during testing
     # policy.train()
     policy = RNNPolicy(env, N_HIDDEN, N_LAYERS)
+    LEARNING_RATE = 0.01
+    MOMENTUM = 0.9
+    TRIALS = 100
+    EPISODES = 100
+    TRAJECTORY_LEN = 100
+    policy_optim = optim.SGD(policy.parameters(), lr=LEARNING_RATE, momentum=MOMENTUM)
+
+    # maximize the expected total discounted reward accumulated during a single trial rather than a single episode
+    for trial in range(TRIALS):
+        # reset hidden state
+        # for each trial, separate MDP is drawn
+
+        # TODO: they also have for e in epochs here (only needed for PPO?)
+
+        for episode in range(EPISODES):
+            # for each episode, new initial state
+            s, a, r, d = s = env.reset(), 0, 0, 0
+
+            for i in range(TRAJECTORY_LEN):
+                a_probs = policy(*make_tensor(s, a, r, d, env))
+                a = torch.distributions.Categorical(a_probs).sample()
+                s, r, d, _ = env.step(a.item())
+
+                if isinstance(env, BanditEnv):
+                    d = (i == TRAJECTORY_LEN - 1)
+                print(s, a, a_probs, r, d)
+
+            # after trajectory, update (or after episodes acc to PPO?)
 
 
 if __name__ == '__main__':
     init()
     unit_test()
+    train(load_env('bandits'), 32, 2)
