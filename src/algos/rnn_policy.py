@@ -1,4 +1,5 @@
 import random
+import time
 from collections import defaultdict
 
 import numpy as np
@@ -14,6 +15,13 @@ from torch import optim
 from src.envs.init import ENVS_DICT, load_env
 
 
+LEARNING_RATE = 0.01    # TODO try 0.003
+MOMENTUM = 0.9
+TRIALS = 100
+EPISODES = 100
+TRAJECTORY_LEN = 100
+GAMMA = 0.99
+
 # TODO: add generally
 # TODO: fix to(device) and to(dtype)
 def init():
@@ -25,22 +33,28 @@ def init():
     dtype = torch.double
 
 
-def Trajectory():
-    def __init__(self):
+class Trajectory():
+    def __init__(self, s=None, a=None, r=None, d=None, prob=None):
         self.data = defaultdict(list)
+        self.existing_keys = {'s', 'a', 'r', 'd', 'prob'}
+        if s is not None:
+            self.record(s, a, r, d, prob)
 
-    def record(self, s, a, r, d, logits):
+    def record(self, s, a, r, d, prob):
         self.data['s'].append(s)
         self.data['a'].append(a)
         self.data['r'].append(r)
         self.data['d'].append(d)
-        self.data['logits'].append(logits)
+        self.data['prob'].append(prob)
 
     def add(self, type, data):
         self.data[type].append(data)
 
-    def get(self, type):
-        return self.data[type]
+    def __getattr__(self, item):
+        if item not in self.existing_keys:
+            super().__getattribute__(item)
+            #raise KeyError(f'{item} must be in {self.existing_keys}')
+        return self.data[item]
 
 
 class RNNPolicy(nn.Module):
@@ -103,6 +117,7 @@ class RNNPolicy(nn.Module):
 
         # TODO: to.(dtype).to.device(xxx) ?
         self.hidden.detach_()
+        self.cell.detach_()
 
         prob = F.softmax(out, dim=2).view(-1)
         return prob
@@ -127,38 +142,75 @@ def unit_test():
     print('sampled action:', torch.distributions.Categorical(probs).sample())
 
 
+# TODO: add TRPO/PPO
+def optim_step(policy_optim, trajectory, method='REINFORCE'):
+    if method == 'REINFORCE':
+        rewards = trajectory.r
+        prob = trajectory.prob
+
+        discounted_rewards = []
+        R = 0
+        for r in rewards[::-1]:
+            R = r + GAMMA * R
+            discounted_rewards.append(R)
+
+        discounted_rewards = discounted_rewards[::-1]
+
+        policy_loss = []
+        # use log to scale loss https://towardsdatascience.com/policy-gradient-methods-104c783251e0
+        # TODO: can also try out averaging probs
+        for p, r in zip(prob, discounted_rewards):
+            policy_loss.append(- torch.log(p) * r)
+
+        policy_optim.zero_grad()
+        policy_loss = torch.cat(policy_loss).sum()
+        policy_loss.backward()#retain_graph=True)     # TODO: retain_graph only needed when we have 2 losses/ two outputs
+        policy_optim.step()
+
+
 def train(env, N_HIDDEN=32, N_LAYERS=2):
     # TODO: do not forget to set to eval() mode during testing
-    # policy.train()
     policy = RNNPolicy(env, N_HIDDEN, N_LAYERS)
-    LEARNING_RATE = 0.01
-    MOMENTUM = 0.9
-    TRIALS = 100
-    EPISODES = 100
-    TRAJECTORY_LEN = 100
+    policy.train()
     policy_optim = optim.SGD(policy.parameters(), lr=LEARNING_RATE, momentum=MOMENTUM)
 
     # maximize the expected total discounted reward accumulated during a single trial rather than a single episode
+    # TODO: plot rewards over trials
     for trial in range(TRIALS):
         # reset hidden state
+        policy.init_hidden()
         # for each trial, separate MDP is drawn
+        # TODO: reinit new Banditproblem?
 
         # TODO: they also have for e in epochs here (only needed for PPO?)
 
         for episode in range(EPISODES):
+            start_time = time.time()
             # for each episode, new initial state
             s, a, r, d = s = env.reset(), 0, 0, 0
 
-            for i in range(TRAJECTORY_LEN):
+            trajectory = Trajectory(s, a, r, d, torch.tensor([]))
+
+            for t in range(TRAJECTORY_LEN):
                 a_probs = policy(*make_tensor(s, a, r, d, env))
                 a = torch.distributions.Categorical(a_probs).sample()
                 s, r, d, _ = env.step(a.item())
 
                 if isinstance(env, BanditEnv):
-                    d = (i == TRAJECTORY_LEN - 1)
-                print(s, a, a_probs, r, d)
+                    d = (t == TRAJECTORY_LEN - 1)
+                print(f'Episode: {episode} | step: {t}', s, a, a_probs.tolist(), r, d)
+
+                trajectory.record(s, a, r, d, a_probs)
+
+                if d:
+                    break
 
             # after trajectory, update (or after episodes acc to PPO?)
+            optim_step(policy_optim, trajectory)
+
+            # record time, avg/var of action and reward
+
+            # print rewards
 
 
 if __name__ == '__main__':
