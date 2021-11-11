@@ -9,18 +9,38 @@ import torch.nn.functional as F
 
 # Policy Optimization
 # Trust Region Policy Optimization (use a library)
+import wandb as logger
 from gym_bandits.bandit import BanditEnv
 from torch import optim
 
 from src.envs.init import ENVS_DICT, load_env
 
+DEBUG = True
 
-LEARNING_RATE = 0.01    # TODO try 0.003
-MOMENTUM = 0.9
-TRIALS = 100
-EPISODES = 100
-TRAJECTORY_LEN = 100
+POLICY_LEARNING_RATE = 0.001  # 0.01  # TODO try 0.003 to see act_std change for the better
+VALUE_FN_LEARNING_RATE = 0.005  # 0.01  # TODO try 0.003 to see act_std change for the better
+# MOMENTUM = 0.9
 GAMMA = 0.99
+
+TRIALS = 10
+EPOCHS = 100 # 500
+EPISODES = 100   # 50
+TRAJECTORY_LEN = 100    # 1000
+PRINT_EVERY = 10
+
+if DEBUG:
+    TRIALS = 2
+    EPOCHS = 10 # 500
+    EPISODES = 10   # 50
+    TRAJECTORY_LEN = 10    # 1000
+    PRINT_EVERY=1
+
+
+N_HIDDEN_POLICY = 32
+N_HIDDEN_VALUE_FN = 32
+N_LAYERS = 2
+
+
 
 # TODO: add generally
 # TODO: fix to(device) and to(dtype)
@@ -33,28 +53,56 @@ def init():
     dtype = torch.double
 
 
-class Trajectory():
-    def __init__(self, s=None, a=None, r=None, d=None, prob=None):
+class DataRecorder():
+    def __init__(self, existing_keys):
         self.data = defaultdict(list)
-        self.existing_keys = {'s', 'a', 'r', 'd', 'prob'}
-        if s is not None:
-            self.record(s, a, r, d, prob)
+        self.existing_keys = existing_keys
 
-    def record(self, s, a, r, d, prob):
-        self.data['s'].append(s)
-        self.data['a'].append(a)
-        self.data['r'].append(r)
-        self.data['d'].append(d)
-        self.data['prob'].append(prob)
-
-    def add(self, type, data):
-        self.data[type].append(data)
+    def record(self, **kwargs):
+        for k, v in kwargs.items():
+            if k not in self.existing_keys:
+                raise KeyError(f'{k} must be in {self.existing_keys}')
+            self.data[k].append(v)
 
     def __getattr__(self, item):
         if item not in self.existing_keys:
             super().__getattribute__(item)
-            #raise KeyError(f'{item} must be in {self.existing_keys}')
         return self.data[item]
+
+
+class Trajectory(DataRecorder):
+    def __init__(self, s=None, a=None, r=None, d=None, prob=None):
+        super(Trajectory, self).__init__(existing_keys={'s', 'a', 'r', 'd', 'prob'})
+        if s is not None:
+            self.record(s, a, r, d, prob)
+
+    def record(self, s, a, r, d, prob):
+        super().record(s=s, a=a, r=r, d=d, prob=prob)
+
+
+class SummaryStatistics(DataRecorder):
+    def __init__(self, trajectory_len, episodes):
+        super(SummaryStatistics, self).__init__(
+            existing_keys={
+                # per episode
+                'time', 'a_avg', 'a_std', 'r_avg', 'r_std', 'r_sum', 'trajectories',
+                # per epoch
+                'episode_r_avg'})
+        self.trajectory_len = trajectory_len
+        self.episodes = episodes
+
+    def record(self, time, trajectory):
+        a_avg = np.mean(trajectory.a)
+        a_std = np.std(trajectory.a)
+        r_avg = np.mean(trajectory.r)
+        r_std = np.std(trajectory.r)
+        r_sum = np.sum(trajectory.r)
+        super().record(time=time, a_avg=a_avg, a_std=a_std, r_avg=r_avg, r_std=r_std, r_sum=r_sum,
+                       trajectories=trajectory)
+
+    # for readability
+    def add_epochal(self, **oneval):
+        super().record(**oneval)
 
 
 class RNNPolicy(nn.Module):
@@ -120,8 +168,12 @@ class RNNPolicy(nn.Module):
         self.cell.detach_()
 
         prob = F.softmax(out, dim=2).view(-1)
+        if any(torch.isnan(p) for p in prob):
+            print('err')
         return prob
 
+
+# torch.autograd.detect_anomaly()
 
 def make_tensor(s, a, r, d, env):
     s = torch.tensor(s, device=device)
@@ -161,59 +213,90 @@ def optim_step(policy_optim, trajectory, method='REINFORCE'):
         # TODO: can also try out averaging probs
         for p, r in zip(prob, discounted_rewards):
             policy_loss.append(- torch.log(p) * r)
+            # policy_loss.append(  p * r)
 
         policy_optim.zero_grad()
         policy_loss = torch.cat(policy_loss).sum()
-        policy_loss.backward()#retain_graph=True)     # TODO: retain_graph only needed when we have 2 losses/ two outputs
+        policy_loss.backward()  # retain_graph=True)     # TODO: retain_graph only needed when we have 2 losses/ two outputs
         policy_optim.step()
 
 
-def train(env, N_HIDDEN=32, N_LAYERS=2):
-    # TODO: do not forget to set to eval() mode during testing
-    policy = RNNPolicy(env, N_HIDDEN, N_LAYERS)
-    policy.train()
-    policy_optim = optim.SGD(policy.parameters(), lr=LEARNING_RATE, momentum=MOMENTUM)
+class PPO():
+    def __init__(self, policy, value_fn):
+        self.policy = policy
+        self.value_fn = value_fn
 
-    # maximize the expected total discounted reward accumulated during a single trial rather than a single episode
-    # TODO: plot rewards over trials
-    for trial in range(TRIALS):
-        # reset hidden state
-        policy.init_hidden()
-        # for each trial, separate MDP is drawn
-        # TODO: reinit new Banditproblem?
+    def train(self, env, epochs):
+        start_time = time.time()
 
-        # TODO: they also have for e in epochs here (only needed for PPO?)
+        self.policy.train()
+        self.value_fn.train()
+        policy_optim = optim.RMSprop(self.policy.parameters(), lr=POLICY_LEARNING_RATE)  # , momentum=MOMENTUM)
+        value_fn_optim = optim.RMSprop(self.value_fn.parameters(), lr=VALUE_FN_LEARNING_RATE)  # , momentum=MOMENTUM)
 
-        for episode in range(EPISODES):
-            start_time = time.time()
-            # for each episode, new initial state
-            s, a, r, d = s = env.reset(), 0, 0, 0
+        statistics = SummaryStatistics(TRAJECTORY_LEN, EPISODES)
 
-            trajectory = Trajectory(s, a, r, d, torch.tensor([]))
+        # maximize the expected total discounted reward accumulated during a single trial rather than a single episode
+        try:
+            for epoch in range(epochs):
 
-            for t in range(TRAJECTORY_LEN):
-                a_probs = policy(*make_tensor(s, a, r, d, env))
-                a = torch.distributions.Categorical(a_probs).sample()
-                s, r, d, _ = env.step(a.item())
+                for episode in range(EPISODES):
+                    # for each episode, new initial state
+                    s, a, r, d = env.reset(), 0, 0, 0
 
-                if isinstance(env, BanditEnv):
-                    d = (t == TRAJECTORY_LEN - 1)
-                print(f'Episode: {episode} | step: {t}', s, a, a_probs.tolist(), r, d)
+                    trajectory = Trajectory(s, a, r, d, torch.tensor([]))
 
-                trajectory.record(s, a, r, d, a_probs)
+                    for t in range(TRAJECTORY_LEN):
+                        a_probs = self.policy(*make_tensor(s, a, r, d, env))
+                        a = torch.distributions.Categorical(a_probs).sample().item()
+                        s, r, d, _ = env.step(a)
 
-                if d:
-                    break
+                        if episode < 0:
+                            print(a, a_probs.tolist(), r)
+                        if isinstance(env, BanditEnv):
+                            d = (t == TRAJECTORY_LEN - 1)
+                        # print(f'Episode: {episode} | step: {t}', s, a, a_probs.tolist(), r, d)
 
-            # after trajectory, update (or after episodes acc to PPO?)
-            optim_step(policy_optim, trajectory)
+                        trajectory.record(s, a, r, d, a_probs)
 
-            # record time, avg/var of action and reward
+                        if d:
+                            break
 
-            # print rewards
+                    # record time, avg/var of action and reward for one trajectory
+                    statistics.record(time.time() - start_time, trajectory)
+
+                # avg reward per episode in last epoch
+                avg_reward_per_episode = np.mean(statistics.r_sum[-EPISODES])
+                statistics.add_epochal(episode_r_avg=avg_reward_per_episode)
+
+                # after one epoch (episodes * trajectories), update nets
+                #policy_loss, value_fn_loss = optim_step(policy_optim, value_fn_optim, statistics)
+
+                if epoch % PRINT_EVERY == 0:
+                    print(f'Epoch: {epoch} | '
+                          f'Time: {np.sum(statistics.time):.0f}s, {PRINT_EVERY // np.sum(statistics.time[-PRINT_EVERY])}ep/s | '
+                          f'Reward avg: {np.mean(statistics.r_avg[-PRINT_EVERY]):.2f} | '
+                          f'Action std: {statistics.a_std[-1]:.4f}'
+                          )
+                #logger.log({"policy_loss": policy_loss, "value_loss": value_fn_loss, "reward": avg_reward_per_episode,
+                #            "epoch": epoch, })
+        except Exception as e:
+            print(e)
+        finally:
+            # TODO
+            pass
 
 
 if __name__ == '__main__':
     init()
     unit_test()
-    train(load_env('bandits'), 32, 2)
+    env = load_env('bandits')
+    policy = RNNPolicy(env, N_HIDDEN_POLICY, N_LAYERS).to(device).to(dtype)
+    value_fn = nn.Sequential(
+        nn.Linear(policy.state_emb_size, N_HIDDEN_VALUE_FN),
+        nn.Dropout(p=0.5),
+        nn.ReLU(),
+        nn.Linear(N_HIDDEN_VALUE_FN, 1),
+    ).to(device).to(dtype)
+    model = PPO(policy, value_fn)
+    model.train(env, EPOCHS)
