@@ -16,7 +16,7 @@ from torch import optim
 
 from src.envs.init import ENVS_DICT, load_env
 
-DEBUG = False
+DEBUG = True
 
 POLICY_LEARNING_RATE = 0.001  # 0.01  # TODO try 0.003 to see act_std change for the better
 VALUE_FN_LEARNING_RATE = 0.005  # 0.01  # TODO try 0.003 to see act_std change for the better
@@ -32,8 +32,8 @@ PRINT_EVERY = 10
 if DEBUG:
     TRIALS = 2
     EPOCHS = 10  # 500
-    EPISODES = 10  # 50
-    TRAJECTORY_LEN = 20  # 1000
+    EPISODES = 50  # 50
+    TRAJECTORY_LEN = 50  # 1000
     PRINT_EVERY = 1
 
 N_HIDDEN_POLICY = 32
@@ -41,6 +41,7 @@ N_HIDDEN_VALUE_FN = 32
 N_LAYERS = 2
 
 N_POLICY_UPDATES = 8  # 16
+N_VALUE_UPDATES = 8  # 16
 CLIP_EPSILON = 0.2
 
 
@@ -356,11 +357,18 @@ class PPO():
             policy_loss.backward()
             policy_optim.step()
 
-        # TODO value function
+        for it in range(N_VALUE_UPDATES):
+            value_loss = torch.zeros(1, requires_grad=True)
+            for i in range(batch_len):
+                v = self.value_fn(self.policy.encode_state(torch.tensor(states[i]))).view(-1)
+                value_loss = value_loss + F.mse_loss(v, torch.tensor(discounted_r[i]))
 
-        value_loss = 0
+            value_loss = value_loss / batch_len
+            value_fn_optim.zero_grad()
+            value_loss.backward()
+            value_fn_optim.step()
 
-        return policy_loss.item(), value_loss
+        return policy_loss.item(), value_loss.item()
 
 
 if __name__ == '__main__':
