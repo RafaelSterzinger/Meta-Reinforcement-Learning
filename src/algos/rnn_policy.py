@@ -16,7 +16,7 @@ from torch import optim
 
 from src.envs.init import ENVS_DICT, load_env
 
-DEBUG = True
+DEBUG = False
 
 POLICY_LEARNING_RATE = 0.001  # 0.01  # TODO try 0.003 to see act_std change for the better
 VALUE_FN_LEARNING_RATE = 0.005  # 0.01  # TODO try 0.003 to see act_std change for the better
@@ -24,9 +24,9 @@ VALUE_FN_LEARNING_RATE = 0.005  # 0.01  # TODO try 0.003 to see act_std change f
 GAMMA = 0.99
 
 TRIALS = 10
-EPOCHS = 100  # 500
+EPOCHS = 110  # 500
 EPISODES = 100  # 50
-TRAJECTORY_LEN = 100  # 1000
+TRAJECTORY_LEN = 90  # 1000
 PRINT_EVERY = 10
 
 if DEBUG:
@@ -75,10 +75,23 @@ class DataRecorder():
 
 class Trajectory(DataRecorder):
     def __init__(self):
-        super(Trajectory, self).__init__(existing_keys={'s', 'a', 'r', 'd', 'a_logits'})
+        super(Trajectory, self).__init__(existing_keys={'s', 'a', 'r', 'd', 'a_logits', 'discounted_r'})
 
     def record(self, s, a, r, d, a_logits):
         super().record(s=s, a=a, r=r, d=d, a_logits=a_logits)
+
+    def discount_rewards(self, normalize=True):
+        discounted_rewards = []
+        R = 0
+        for r in self.r[::-1]:
+            R = r + GAMMA * R
+            discounted_rewards.append(R)
+        discounted_rewards = np.array(discounted_rewards[::-1])
+        # TODO check if correct
+        if normalize:
+            discounted_rewards = (discounted_rewards - np.mean(discounted_rewards, keepdims=True)) / (
+                    np.std(discounted_rewards, keepdims=True) + np.finfo('float32').eps)
+        self.discounted_r = discounted_rewards
 
 
 class SummaryStatistics(DataRecorder):
@@ -92,12 +105,13 @@ class SummaryStatistics(DataRecorder):
         self.trajectory_len = trajectory_len
         self.episodes = episodes
 
-    def record(self, time, trajectory):
+    def record(self, time, trajectory, normalize=True):
         a_avg = np.mean(trajectory.a)
         a_std = np.std(trajectory.a)
         r_avg = np.mean(trajectory.r)
         r_std = np.std(trajectory.r)
         r_sum = np.sum(trajectory.r)
+        trajectory.discount_rewards(normalize)
         super().record(time=time, a_avg=a_avg, a_std=a_std, r_avg=r_avg, r_std=r_std, r_sum=r_sum,
                        trajectories=trajectory)
 
@@ -105,6 +119,8 @@ class SummaryStatistics(DataRecorder):
     def add_epochal(self, **oneval):
         super().record(**oneval)
 
+    def reset_epoch(self):
+        self.trajectories.clear()
 
 class RNNPolicy(nn.Module):
     def __init__(self, env, hidden_dim, n_layers):
@@ -220,18 +236,6 @@ def unit_test():
     print('sampled action:', torch.distributions.Categorical(logits=logits).sample())
 
 
-def discount_rewards(rewards, normalize=True):
-    discounted_rewards = []
-    R = np.zeros(len(rewards))
-    for r in np.array(rewards).T[::-1]:
-        R = r + GAMMA * R
-        discounted_rewards.append(R)
-    discounted_rewards = np.array(discounted_rewards[::-1]).T
-    # TODO check if correct
-    if normalize:
-        discounted_rewards = (discounted_rewards - np.mean(discounted_rewards, axis=1, keepdims=True)) / (
-                np.std(discounted_rewards, axis=1, keepdims=True) + np.finfo('float32').eps)
-    return discounted_rewards
 
 
 # TODO: add TRPO/PPO
@@ -280,6 +284,7 @@ class PPO():
                     s, a, r, d = env.reset(), 0, 0, 0
 
                     trajectory = Trajectory()
+                    traj_start = time.time()
 
                     for t in range(TRAJECTORY_LEN):
                         a_logits = self.policy(*make_tensor(s, a, r, d, env))
@@ -298,7 +303,7 @@ class PPO():
                             break
 
                     # record time, avg/var of action and reward for one trajectory
-                    statistics.record(time.time() - start_time, trajectory)
+                    statistics.record(time.time() - traj_start, trajectory, normalize=True)
 
                 # avg reward per episode in last epoch
                 avg_reward_per_episode = np.mean(statistics.r_sum[-EPISODES])
@@ -306,6 +311,7 @@ class PPO():
 
                 # after one epoch (episodes * trajectories), update nets
                 policy_loss, value_fn_loss = self.optim_step(policy_optim, value_fn_optim, statistics, env)
+                statistics.reset_epoch()
 
                 if epoch % PRINT_EVERY == 0:
                     # TODO: fix seconds printing
@@ -313,6 +319,8 @@ class PPO():
                           f'Time: {np.sum(statistics.time):.0f}s, {PRINT_EVERY // np.sum(statistics.time[-PRINT_EVERY:])}ep/s | '
                           f'Reward avg: {np.mean(statistics.r_avg[-PRINT_EVERY:]):.2f} | '
                           f'Action std: {statistics.a_std[-1]:.4f}'
+                          f'Policy loss: {policy_loss:.4f} | '
+                          f'Value loss: {value_fn_loss:.4f}'
                           )
                 # logger.log({"policy_loss": policy_loss, "value_loss": value_fn_loss, "reward": avg_reward_per_episode,
                 #            "epoch": epoch, })
@@ -326,12 +334,12 @@ class PPO():
 
     def optim_step(self, policy_optim, value_fn_optim, statistics, env):
         batch_len = statistics.episodes
-        states = [traj.s for traj in statistics.trajectories[-batch_len:]]
-        actions = [torch.tensor(traj.a) for traj in statistics.trajectories[-batch_len:]]
-        a_logits = [torch.stack(traj.a_logits) for traj in statistics.trajectories[-batch_len:]]
-        rewards = [traj.r for traj in statistics.trajectories[-batch_len:]]
-        dones = [traj.d for traj in statistics.trajectories[-batch_len:]]
-        discounted_r = discount_rewards(rewards, True)
+        states = [traj.s for traj in statistics.trajectories]
+        actions = [torch.tensor(traj.a) for traj in statistics.trajectories]
+        a_logits = [torch.stack(traj.a_logits) for traj in statistics.trajectories]
+        rewards = [traj.r for traj in statistics.trajectories]
+        dones = [traj.d for traj in statistics.trajectories]
+        discounted_r = [traj.discounted_r for traj in statistics.trajectories]
         with torch.no_grad():
             values = [self.value_fn(self.policy.encode_state(torch.tensor(s), batch=True)) for s in states]
             advantage = [torch.tensor(d) - v for d, v in zip(discounted_r, values)]
@@ -342,7 +350,7 @@ class PPO():
 
         for it in range(N_POLICY_UPDATES):
             policy_loss = torch.zeros(1, requires_grad=True)
-            for i, traj in enumerate(statistics.trajectories[-batch_len:]):
+            for i, traj in enumerate(statistics.trajectories):
                 # feed in whole trajectory as batch
                 # return of batch must be
                 curr_logits = self.policy(*(torch.tensor(x) for x in [traj.s, traj.a, traj.r, traj.d]),
