@@ -1,6 +1,6 @@
 # On the Robustness of Context- and Gradient-based Meta-Reinforcement Learning Algorithms
 
-In order to reproduce the results we recommend to refer to the following repositories, for each create a separate environment and run the scripts as explained in their README files.
+In order to reproduce the results we recommend to refer to the following repositories which we forked and adapted. For each create a separate environment and run the scripts as explained in their README files.
 
 
 -  Reproducing results for online algorithms follow: [here](https://github.com/FatjonZOGAJ/ProMP/tree/full_code) and [here](https://github.com/FatjonZOGAJ/oyster/tree/master)
